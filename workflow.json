@@ -1,0 +1,345 @@
+{
+  "name": "醫藥新知電子新聞稿 (已修復迴圈)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "weeks",
+              "triggerAtDay": [1],
+              "triggerAtHour": 8
+            }
+          ]
+        }
+      },
+      "id": "4923bc0a-2434-4d79-80fd-6786fd02dc56",
+      "name": "每週一 08:00",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [11840, 2816]
+    },
+    {
+      "parameters": {
+        "url": "https://www.nejm.org/action/showFeed?jc=nejm&type=etoc&feed=rss",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Accept", "value": "application/rss+xml, application/atom+xml, application/xml, text/xml, */*" },
+            { "name": "User-Agent", "value": "Mozilla/5.0 (compatible; n8n-workflow/1.0)" }
+          ]
+        },
+        "options": { "response": { "response": { "responseFormat": "text" } } }
+      },
+      "id": "f6eae921-344b-48a3-b9df-17dd3280af83",
+      "name": "Fetch NEJM",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [12080, 2496],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "url": "https://www.thelancet.com/rssfeed/lancet_current.xml",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Accept", "value": "application/rss+xml, application/atom+xml, application/xml, text/xml, */*" },
+            { "name": "User-Agent", "value": "Mozilla/5.0 (compatible; n8n-workflow/1.0)" }
+          ]
+        },
+        "options": { "response": { "response": { "responseFormat": "text" } } }
+      },
+      "id": "f4268518-1ceb-4c24-afea-18614606ecb9",
+      "name": "Fetch Lancet",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [12080, 2624],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "url": "https://jamanetwork.com/rss/site_3/latestIssue_67.xml",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Accept", "value": "application/rss+xml, application/atom+xml, application/xml, text/xml, */*" },
+            { "name": "User-Agent", "value": "Mozilla/5.0 (compatible; n8n-workflow/1.0)" }
+          ]
+        },
+        "options": { "response": { "response": { "responseFormat": "text" } } }
+      },
+      "id": "fe0bbf42-688e-4d3c-8710-f1490003bff9",
+      "name": "Fetch JAMA",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [12080, 2736],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "url": "https://accpjournals.onlinelibrary.wiley.com/feed/18759114/most-recent",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Accept", "value": "application/rss+xml, application/atom+xml, application/xml, text/xml, */*" },
+            { "name": "User-Agent", "value": "Mozilla/5.0 (compatible; n8n-workflow/1.0)" }
+          ]
+        },
+        "options": { "response": { "response": { "responseFormat": "text" } } }
+      },
+      "id": "2fb8546a-a4b4-41e2-9090-6b01caa5ddc5",
+      "name": "Fetch Pharmacotherapy",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [12080, 2864],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "url": "https://ascpt.onlinelibrary.wiley.com/feed/15326535/most-recent",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Accept", "value": "application/rss+xml, application/atom+xml, application/xml, text/xml, */*" },
+            { "name": "User-Agent", "value": "Mozilla/5.0 (compatible; n8n-workflow/1.0)" }
+          ]
+        },
+        "options": { "response": { "response": { "responseFormat": "text" } } }
+      },
+      "id": "8c009682-3afd-41ef-89ee-98000ae51842",
+      "name": "Fetch CP&T (Clinical Pharmacology)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [12080, 2976],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "url": "https://www.fda.gov/about-fda/contact-fda/stay-informed/rss-feeds/medwatch/rss.xml",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Accept", "value": "application/rss+xml, application/atom+xml, application/xml, text/xml, */*" },
+            { "name": "User-Agent", "value": "Mozilla/5.0 (compatible; n8n-workflow/1.0)" }
+          ]
+        },
+        "options": { "response": { "response": { "responseFormat": "text" } } }
+      },
+      "id": "e4e26588-8b3c-4fc1-bd15-6067fa57358f",
+      "name": "Fetch FDA MedWatch",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [12080, 3104],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "url": "https://www.fda.gov/about-fda/contact-fda/stay-informed/rss-feeds/drugs/rss.xml",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Accept", "value": "application/rss+xml, application/atom+xml, application/xml, text/xml, */*" },
+            { "name": "User-Agent", "value": "Mozilla/5.0 (compatible; n8n-workflow/1.0)" }
+          ]
+        },
+        "options": { "response": { "response": { "responseFormat": "text" } } }
+      },
+      "id": "98c45671-e557-47b4-a246-e94a0d82da5d",
+      "name": "Fetch FDA Drugs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [12080, 3280],
+      "continueOnFail": true
+    },
+    {
+      "parameters": { "numberInputs": 7 },
+      "id": "a332af2d-beba-43a2-9a51-c6351b8304fa",
+      "name": "Merge RSS",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [12368, 2864]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ── Unified RSS/Atom XML Parser ──────────────────────────────────\nfunction parseXML(xmlText) {\n  const items = [];\n  if (!xmlText || typeof xmlText !== 'string') return items;\n  const isAtom = /<feed[\\s>]/i.test(xmlText);\n  const itemTag = isAtom ? 'entry' : 'item';\n  let feedUrl = '';\n  const chanLink = /<channel[^>]*>[\\s\\S]*?<link[^>]*>([^<]+)<\\/link>/i.exec(xmlText);\n  const atomLink = /<link[^>]*rel=[\"']alternate[\"'][^>]*href=[\"']([^\"']+)[\"']/i.exec(xmlText)\n               || /<link[^>]*href=[\"']([^\"']+)[\"'][^>]*rel=[\"']alternate[\"']/i.exec(xmlText);\n  if (chanLink) feedUrl = chanLink[1].trim();\n  else if (atomLink) feedUrl = atomLink[1].trim();\n  const itemRegex = new RegExp('<' + itemTag + '[^>]*>(.*?)</' + itemTag + '>', 'gis');\n  let m;\n  while ((m = itemRegex.exec(xmlText)) !== null) {\n    const block = m[1];\n    const getTag = (tag) => {\n      const r = new RegExp('<' + tag + '[^>]*><!\\\\[CDATA\\\\[(.*?)\\\\]\\\\]></' + tag + '>|<' + tag + '[^>]*>(.*?)</' + tag + '>', 'is');\n      const x = r.exec(block);\n      return x ? (x[1] || x[2] || '').trim() : '';\n    };\n    const hrefMatch = /<link[^>]*href=[\"']([^\"']+)[\"']/i.exec(block);\n    const link = (hrefMatch ? hrefMatch[1] : '') || getTag('link') || getTag('guid') || getTag('id') || '';\n    const title = getTag('title').replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&quot;/g,'\"');\n    const rawDesc = getTag('description') || getTag('summary') || getTag('content') || '';\n    const summary = rawDesc.replace(/<[^>]+>/g, '').replace(/&amp;/g,'&').replace(/&nbsp;/g,' ').substring(0, 350);\n    const pubDate = getTag('pubDate') || getTag('published') || getTag('updated') || getTag('dc:date') || '';\n    if (title) items.push({ title, link, contentSnippet: summary, pubDate, feedUrl });\n  }\n  items.sort((a, b) => {\n    const ta = a.pubDate ? new Date(a.pubDate).getTime() : 0;\n    const tb = b.pubDate ? new Date(b.pubDate).getTime() : 0;\n    return tb - ta;\n  });\n  const cutoff = Date.now() - 10 * 24 * 60 * 60 * 1000;\n  return items.filter(i => {\n    if (!i.pubDate) return true;\n    const t = new Date(i.pubDate).getTime();\n    return isNaN(t) || t >= cutoff;\n  });\n}\n\nconst allItems = [];\nfor (const item of $input.all()) {\n  const xmlText = item.json.data || item.json.body || item.json.response || '';\n  if (!xmlText || typeof xmlText !== 'string' || xmlText.length < 100) continue;\n  const parsed = parseXML(xmlText);\n  allItems.push(...parsed);\n}\n\nreturn allItems.map(i => ({ json: i }));"
+      },
+      "id": "c149716a-8073-47e0-ae1f-e5f268357645",
+      "name": "Parse & Normalize RSS",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [12608, 2864]
+    },
+    {
+      "parameters": {
+        "compare": "selectedFields",
+        "fieldsToCompare": "link",
+        "options": {}
+      },
+      "id": "b26e57ca-66ad-481e-905e-4a742637a965",
+      "name": "排除已處理文章",
+      "type": "n8n-nodes-base.removeDuplicates",
+      "typeVersion": 1,
+      "position": [12848, 2864]
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\n\nconst isFDA = (a) => (a.feedUrl || a.link || '').toLowerCase().includes('fda.gov');\n\nconst getSource = (a) => {\n  let key = a.feedUrl || '';\n  if (!key) {\n    try { key = new URL(a.link).hostname; }\n    catch (_) { key = (a.link || '').replace(/^https?:\\/\\//, '').split('/')[0] || 'unknown'; }\n  }\n  return key;\n};\n\nconst SOURCE_LABELS = {\n  'nejm.org':       'NEJM',\n  'thelancet.com':  'The Lancet',\n  'jamanetwork.com':'JAMA',\n  'wiley.com':      'Pharmacotherapy / CP&T',\n  'ascpt':          'CP&T',\n};\n\nconst getLabel = (feedUrl) => {\n  for (const [key, label] of Object.entries(SOURCE_LABELS)) {\n    if ((feedUrl||'').includes(key)) return label;\n  }\n  return feedUrl || 'Unknown';\n};\n\nconst FDA_ITEM_LIMIT = 6;\n\nconst allJournals = items.filter(i => !isFDA(i.json)).map(i => i.json);\nconst allFDA      = items.filter(i =>  isFDA(i.json)).map(i => i.json);\n\nconst bySource = {};\nfor (const a of allJournals) {\n  const key = getSource(a);\n  if (!bySource[key]) bySource[key] = [];\n  bySource[key].push(a);\n}\nfor (const key of Object.keys(bySource)) {\n  bySource[key].sort((a, b) =>\n    new Date(b.pubDate||0) - new Date(a.pubDate||0)\n  );\n}\n\nconst fmt = (a) =>\n  `- ${a.title}\\n  ${a.contentSnippet || ''}\\n  URL: ${a.link}`;\n\nconst today = new Date().toLocaleDateString('zh-TW', {\n  year: 'numeric', month: '2-digit', day: '2-digit', timeZone: 'Asia/Taipei'\n});\nconst dateStr = today.replace(/\\//g, '-');\n\nconst outputs = [];\n\nfor (const [sourceKey, articles] of Object.entries(bySource)) {\n  const label = getLabel(sourceKey);\n  const docTitle = `醫藥新知週報 ${dateStr} — ${label}`;\n  const prompt = 'placeholder';\n  outputs.push({ json: { prompt, docTitle, today, source: label, articleCount: articles.length } });\n}\n\nreturn outputs;"
+      },
+      "id": "929b443d-8716-4af2-b677-6ff2f03a614b",
+      "name": "整理分類 & 建立 Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [13088, 2864]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.prompt }}"
+      },
+      "id": "38e1f91a-2596-4585-b31d-1163236a636b",
+      "name": "AI 撰寫新聞稿",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.4,
+      "position": [13568, 2864]
+    },
+    {
+      "parameters": {
+        "jsCode": "const digestText = $json.text || '';\nconst batchItem = $('逐來源處理').first().json;\nreturn [{ json: { digestText, docTitle: batchItem.docTitle, source: batchItem.source } }];"
+      },
+      "id": "ab3a04f2-efc4-4f85-8b3f-998802c1ba7a",
+      "name": "準備文件內容",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [13808, 2864]
+    },
+    {
+      "parameters": {
+        "folderId": "1cfA8AgRT0kah5wb9qiLRt2oi97ADF5J6",
+        "title": "={{ $json.docTitle }}"
+      },
+      "id": "4cd0beda-b901-4885-83fb-e50d4f917c40",
+      "name": "建立 Google Doc",
+      "type": "n8n-nodes-base.googleDocs",
+      "typeVersion": 2,
+      "position": [14048, 2864],
+      "credentials": {
+        "googleDocsOAuth2Api": {
+          "id": "U9g9VbFfY6VF1RlQ",
+          "name": "Google Docs account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://docs.googleapis.com/v1/documents/{{ $json.documentId || $json.id }}:batchUpdate",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleDocsOAuth2Api",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ \"requests\": [{ \"insertText\": { \"location\": { \"index\": 1 }, \"text\": $('準備文件內容').first().json.digestText } }] }) }}",
+        "options": {}
+      },
+      "id": "fc356d47-1220-43c5-9517-363daa041511",
+      "name": "寫入文件內容",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [14288, 2864],
+      "credentials": {
+        "googleDocsOAuth2Api": {
+          "id": "U9g9VbFfY6VF1RlQ",
+          "name": "Google Docs account"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "id": "c2b9fb3e-6908-4138-9e1a-a3296d12272d",
+      "name": "錯誤捕捉",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [13568, 3264]
+    },
+    {
+      "parameters": {
+        "options": {
+          "maxOutputTokens": 8192,
+          "temperature": 0.3
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [13568, 3072],
+      "id": "e6d2949c-dad9-49fc-b2bd-f8196ff4e97f",
+      "name": "Google Gemini Chat Model",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "y820M4W5mpWnQ21f",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": { "options": {} },
+      "id": "db9e45b1-d8ff-4033-b6cd-2dc98132fe8f",
+      "name": "逐來源處理",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [13328, 2864]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "每週一 08:00": {
+      "main": [[
+        { "node": "Fetch NEJM", "type": "main", "index": 0 },
+        { "node": "Fetch Lancet", "type": "main", "index": 0 },
+        { "node": "Fetch JAMA", "type": "main", "index": 0 },
+        { "node": "Fetch Pharmacotherapy", "type": "main", "index": 0 },
+        { "node": "Fetch CP&T (Clinical Pharmacology)", "type": "main", "index": 0 },
+        { "node": "Fetch FDA MedWatch", "type": "main", "index": 0 },
+        { "node": "Fetch FDA Drugs", "type": "main", "index": 0 }
+      ]]
+    },
+    "Fetch NEJM": { "main": [[{ "node": "Merge RSS", "type": "main", "index": 0 }]] },
+    "Fetch Lancet": { "main": [[{ "node": "Merge RSS", "type": "main", "index": 1 }]] },
+    "Fetch JAMA": { "main": [[{ "node": "Merge RSS", "type": "main", "index": 2 }]] },
+    "Fetch Pharmacotherapy": { "main": [[{ "node": "Merge RSS", "type": "main", "index": 3 }]] },
+    "Fetch CP&T (Clinical Pharmacology)": { "main": [[{ "node": "Merge RSS", "type": "main", "index": 4 }]] },
+    "Fetch FDA MedWatch": { "main": [[{ "node": "Merge RSS", "type": "main", "index": 5 }]] },
+    "Fetch FDA Drugs": { "main": [[{ "node": "Merge RSS", "type": "main", "index": 6 }]] },
+    "Merge RSS": { "main": [[{ "node": "Parse & Normalize RSS", "type": "main", "index": 0 }]] },
+    "Parse & Normalize RSS": { "main": [[{ "node": "排除已處理文章", "type": "main", "index": 0 }]] },
+    "排除已處理文章": { "main": [[{ "node": "整理分類 & 建立 Prompt", "type": "main", "index": 0 }]] },
+    "整理分類 & 建立 Prompt": { "main": [[{ "node": "逐來源處理", "type": "main", "index": 0 }]] },
+    "逐來源處理": {
+      "main": [
+        [{ "node": "逐來源處理", "type": "main", "index": 0 }],
+        [{ "node": "AI 撰寫新聞稿", "type": "main", "index": 0 }]
+      ]
+    },
+    "AI 撰寫新聞稿": { "main": [[{ "node": "準備文件內容", "type": "main", "index": 0 }]] },
+    "準備文件內容": { "main": [[{ "node": "建立 Google Doc", "type": "main", "index": 0 }]] },
+    "建立 Google Doc": { "main": [[{ "node": "寫入文件內容", "type": "main", "index": 0 }]] },
+    "寫入文件內容": { "main": [[{ "node": "逐來源處理", "type": "main", "index": 0 }]] },
+    "Google Gemini Chat Model": {
+      "ai_languageModel": [[{ "node": "AI 撰寫新聞稿", "type": "ai_languageModel", "index": 0 }]]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false,
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "versionId": "3376c94b-c49d-43d0-a4b8-b6f060225a54",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "0187bcf89b2ee97d53f10bee583eefdf6e77929a910fac7b0ca9954cdfa3b93b"
+  },
+  "id": "ZXVpv5sco9EaFV6i",
+  "tags": []
+}

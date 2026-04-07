@@ -1,0 +1,339 @@
+{
+  "name": "醫藥新知電子新聞稿 (PubMed + Dual-Agent)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "weeks",
+              "triggerAtDay": [
+                1
+              ],
+              "triggerAtHour": 8
+            }
+          ]
+        }
+      },
+      "id": "4923bc0a-2434-4d79-80fd-6786fd02dc56",
+      "name": "每週一 08:00",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        11840,
+        2864
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ── 整理分類 & 建立 Prompt ──\nconst JOURNAL_ORDER = ['NEJM', 'Lancet', 'JAMA', 'BMJ'];\nconst TYPE_ORDER    = ['RCT', 'MA', 'SR', 'OA'];\nconst TYPE_DISPLAY  = { RCT: 'RCT', MA: 'Meta-analysis', SR: 'Systematic Review', OA: 'Original Article' };\n\nconst items = $input.all().map(i => i.json);\n\n// Stats\nconst stats = { RCT: 0, MA: 0, SR: 0, OA: 0 };\nfor (const a of items) {\n  if (stats[a.articleType] !== undefined) stats[a.articleType]++;\n}\n\n// Group & sort\nconst grouped = {};\nfor (const j of JOURNAL_ORDER) {\n  grouped[j] = {};\n  for (const t of TYPE_ORDER) grouped[j][t] = [];\n}\nfor (const a of items) {\n  if (grouped[a.journal] && grouped[a.journal][a.articleType] !== undefined) {\n    grouped[a.journal][a.articleType].push(a);\n  }\n}\nfor (const j of JOURNAL_ORDER) {\n  for (const t of TYPE_ORDER) {\n    grouped[j][t].sort((a, b) => new Date(b.pubDate || 0) - new Date(a.pubDate || 0));\n  }\n}\n\n// ISO week number\nfunction getISOWeek(d) {\n  const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));\n  const day = date.getUTCDay() || 7;\n  date.setUTCDate(date.getUTCDate() + 4 - day);\n  const yearStart = new Date(Date.UTC(date.getUTCFullYear(), 0, 1));\n  return Math.ceil((((date - yearStart) / 86400000) + 1) / 7);\n}\n\nconst now       = new Date();\nconst weekNum   = String(getISOWeek(now)).padStart(2, '0');\nconst year      = now.getFullYear();\nconst timestamp = now.toLocaleString('zh-TW', {\n  timeZone: 'Asia/Taipei',\n  year: 'numeric', month: '2-digit', day: '2-digit',\n  hour: '2-digit', minute: '2-digit', hour12: false,\n});\nconst docTitle = '【藥師文獻週報】' + year + ' 第' + weekNum + '週';\n\n// Format each article for AI prompt\nconst fmtArticle = a =>\n  'PMID: ' + a.pmid + '\\n' +\n  'Journal: ' + a.journal + '\\n' +\n  'Type: ' + (TYPE_DISPLAY[a.articleType] || a.articleType) + '\\n' +\n  'Title: ' + a.title + '\\n' +\n  'Author: ' + (a.firstAuthor || 'N/A') + '\\n' +\n  'DOI: ' + (a.doi || 'N/A') + '\\n' +\n  'PubDate: ' + (a.pubDate || 'N/A') + '\\n' +\n  'Abstract:\\n' + (a.abstract || '(no abstract available)');\n\n// Build ordered article data block\nlet articleData = '';\nfor (const j of JOURNAL_ORDER) {\n  const journalArticles = TYPE_ORDER.flatMap(t => grouped[j][t]);\n  if (!journalArticles.length) continue;\n  articleData += '\\n=== ' + j + ' ===\\n';\n  for (const t of TYPE_ORDER) {\n    if (!grouped[j][t].length) continue;\n    articleData += '\\n-- ' + TYPE_DISPLAY[t] + ' --\\n\\n';\n    for (const a of grouped[j][t]) {\n      articleData += fmtArticle(a) + '\\n\\n---\\n\\n';\n    }\n  }\n}\n\nconst totalCount = items.length;\nconst sep = '══════════════════════════════════════';\n\nconst prompt =\n'You are a clinical pharmacist editor writing a weekly digest in Traditional Chinese.\\n\\n' +\n'TITLE RULE (critical):\\n' +\n'The ▶ title line MUST use the ORIGINAL ENGLISH TITLE exactly as provided — no translation whatsoever.\\n' +\n'The 背景/方法/結果/結論 sections are written in Traditional Chinese (繁體中文).\\n' +\n'Drug names / trial names / gene names / biomarkers must stay in English even within Chinese sentences.\\n\\n' +\n'OUTPUT FORMAT (follow exactly, no deviation):\\n\\n' +\n'【藥師文獻週報】' + year + ' 第' + weekNum + '週\\n' +\n'NEJM / Lancet / JAMA / BMJ 精選\\n' +\n'產製時間：' + timestamp + '\\n\\n' +\nsep + '\\n' +\n'本週收錄：' + totalCount + ' 篇\\n' +\n'RCT：' + stats.RCT + ' 篇｜Meta-analysis：' + stats.MA + ' 篇｜系統性回顧：' + stats.SR + ' 篇｜原著論文：' + stats.OA + ' 篇\\n' +\nsep + '\\n\\n' +\n'For each journal that has articles, in the order NEJM → Lancet → JAMA → BMJ:\\n\\n' +\n'【JOURNAL_NAME】\\n' +\n'──────────────────────────────────────\\n\\n' +\n'For each article within the journal, in the order RCT → Meta-analysis → Systematic Review → Original Article, then by pub_date newest first:\\n\\n' +\n'▶ [Original English title — copy exactly from article data, NEVER translate]\\n' +\n'  類型：[RCT / Meta-analysis / Systematic Review / Original Article]｜作者：[LastName] et al.\\n' +\n'  DOI：[doi from article data, or （詳見原文） if N/A]\\n\\n' +\n'  背景：[≤2 sentences in Chinese: clinical problem or research question]\\n' +\n'  方法：[≤2 sentences in Chinese: study design, N, intervention vs comparator, follow-up]\\n' +\n'  結果：[≤2 sentences in Chinese: primary endpoint result + key stat (HR/RR/OR, 95%CI, p-value)]\\n' +\n'  結論：[exactly 1 sentence in Chinese: clinical implication for pharmacists]\\n\\n' +\n'[blank line between articles]\\n\\n' +\n'RULES:\\n' +\n'- NO MARKDOWN (no **, *, # characters)\\n' +\n'- Use （詳見原文） for any field where information is not available in the abstract\\n' +\n'- End the entire document with: 【本週精選完畢】\\n\\n' +\n'== ARTICLES ==\\n' + articleData;\n\nreturn [{ json: { prompt, docTitle, totalCount, stats, timestamp, year, weekNum } }];"
+      },
+      "id": "929b443d-8716-4af2-b677-6ff2f03a614b",
+      "name": "整理分類 & 建立 Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        12480,
+        2864
+      ]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.prompt }}"
+      },
+      "id": "38e1f91a-2596-4585-b31d-1163236a636b",
+      "name": "AI 撰寫新聞稿",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.4,
+      "position": [
+        12800,
+        2864
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ── 準備文件內容 ──\nconst digestText = $json.text || '';\nconst meta = $('準備審稿 Prompt').first().json;\nreturn [{ json: { digestText, docTitle: meta.docTitle } }];"
+      },
+      "id": "ab3a04f2-efc4-4f85-8b3f-998802c1ba7a",
+      "name": "準備文件內容",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        13760,
+        2864
+      ]
+    },
+    {
+      "parameters": {
+        "folderId": "1cfA8AgRT0kah5wb9qiLRt2oi97ADF5J6",
+        "title": "={{ $json.docTitle }}"
+      },
+      "id": "4cd0beda-b901-4885-83fb-e50d4f917c40",
+      "name": "建立 Google Doc",
+      "type": "n8n-nodes-base.googleDocs",
+      "typeVersion": 2,
+      "position": [
+        14080,
+        2864
+      ],
+      "credentials": {
+        "googleDocsOAuth2Api": {
+          "id": "U9g9VbFfY6VF1RlQ",
+          "name": "Google Docs account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://docs.googleapis.com/v1/documents/{{ $json.documentId || $json.id }}:batchUpdate",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleDocsOAuth2Api",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ \"requests\": [{ \"insertText\": { \"location\": { \"index\": 1 }, \"text\": $('準備文件內容').first().json.digestText } }] }) }}",
+        "options": {}
+      },
+      "id": "fc356d47-1220-43c5-9517-363daa041511",
+      "name": "寫入文件內容",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        14400,
+        2864
+      ],
+      "credentials": {
+        "googleDocsOAuth2Api": {
+          "id": "U9g9VbFfY6VF1RlQ",
+          "name": "Google Docs account"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "id": "c2b9fb3e-6908-4138-9e1a-a3296d12272d",
+      "name": "錯誤捕捉",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [
+        13440,
+        3264
+      ]
+    },
+    {
+      "parameters": {
+        "options": {
+          "maxOutputTokens": 16384,
+          "temperature": 0.3
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        12800,
+        3072
+      ],
+      "id": "e6d2949c-dad9-49fc-b2bd-f8196ff4e97f",
+      "name": "Google Gemini Chat Model",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "y820M4W5mpWnQ21f",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "id": "dc6b2d20-49eb-4e07-bc7b-c49376272af9",
+      "name": "PubMed Fetch",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        12160,
+        2864
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// ── PubMed Fetch ──\n// Runs 16 queries: 4 journals × 4 article types\n// Rate-limited, PMID-deduplicated, returns one item per article\n\nconst BASE = 'https://eutils.ncbi.nlm.nih.gov/entrez/eutils/';\nconst TOOL_NAME = 'PharmJournalNewsletter';\nconst EMAIL = $env.PUBMED_EMAIL || 'noreply@example.com';\nconst API_KEY = $env.PUBMED_API_KEY || '';\nconst DELAY_MS = API_KEY ? 150 : 400;\n\nconst JOURNALS = [\n  { name: 'NEJM',   issn: '0028-4793' },\n  { name: 'Lancet', issn: '0140-6736' },\n  { name: 'JAMA',   issn: '0098-7484' },\n  { name: 'BMJ',    issn: '0959-8138' },\n];\n\nconst TYPES = [\n  { code: 'RCT', label: 'RCT',              retmax: 5,\n    filter: 'randomized controlled trial[pt]' },\n  { code: 'MA',  label: 'Meta-analysis',     retmax: 5,\n    filter: 'meta-analysis[pt]' },\n  { code: 'SR',  label: 'Systematic Review', retmax: 5,\n    filter: 'systematic review[pt]' },\n  { code: 'OA',  label: 'Original Article',  retmax: 3,\n    filter: 'journal article[pt] NOT (randomized controlled trial[pt] OR systematic review[pt] OR meta-analysis[pt] OR review[pt] OR letter[pt] OR editorial[pt] OR comment[pt])' },\n];\n\n// Date range: today − 7 days\nconst now = new Date();\nconst cutoff = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);\nconst fmtDate = d =>\n  d.getFullYear() + '/' +\n  String(d.getMonth() + 1).padStart(2, '0') + '/' +\n  String(d.getDate()).padStart(2, '0');\nconst dateRange = fmtDate(cutoff) + ':' + fmtDate(now) + '[dp]';\n\nconst sleep = ms => new Promise(r => setTimeout(r, ms));\n\nfunction commonParams() {\n  const p = { db: 'pubmed', tool: TOOL_NAME, email: EMAIL };\n  if (API_KEY) p.api_key = API_KEY;\n  return p;\n}\n\nasync function eSearch(issn, typeFilter, retmax) {\n  const term = issn + '[ta] AND ' + dateRange + ' AND ' + typeFilter;\n  const params = Object.assign({}, commonParams(), {\n    term, usehistory: 'y', retmax: String(retmax), retmode: 'json',\n  });\n  const qs = new URLSearchParams(params).toString();\n  const resp = await fetch(BASE + 'esearch.fcgi?' + qs);\n  if (!resp.ok) return [];\n  const data = await resp.json();\n  return (data && data.esearchresult && data.esearchresult.idlist) || [];\n}\n\nasync function eFetch(ids) {\n  if (!ids.length) return '';\n  const params = Object.assign({}, commonParams(), {\n    id: ids.join(','), rettype: 'abstract', retmode: 'xml',\n  });\n  const qs = new URLSearchParams(params).toString();\n  const resp = await fetch(BASE + 'efetch.fcgi?' + qs);\n  if (!resp.ok) return '';\n  return await resp.text();\n}\n\nconst MONTH_MAP = { Jan:1,Feb:2,Mar:3,Apr:4,May:5,Jun:6,Jul:7,Aug:8,Sep:9,Oct:10,Nov:11,Dec:12 };\n\nfunction parseArticles(xml, journal, typeCode, typeLabel) {\n  const articles = [];\n  const artRx = /<PubmedArticle>([sS]*?)<\\/PubmedArticle>/g;\n  let m;\n  while ((m = artRx.exec(xml)) !== null) {\n    const block = m[1];\n\n    const getTag = tag => {\n      const r = new RegExp('<' + tag + '(?:[^>]*)>([\\s\\S]*?)<\\/' + tag + '>', 'i');\n      const x = r.exec(block);\n      return x ? x[1].replace(/<[^>]+>/g, '').trim() : '';\n    };\n\n    const pmid = getTag('PMID');\n    if (!pmid) continue;\n\n    // Title\n    const title = getTag('ArticleTitle').replace(/\\.$/, '').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>');\n    if (!title) continue;\n\n    // First author (LastName + first initial)\n    const authorBlock = (/<AuthorList[^>]*>([\\s\\S]*?)<\\/AuthorList>/.exec(block) || ['', ''])[1];\n    const auM = /<Author[^>]*>[\\s\\S]*?<LastName>([^<]+)<\\/LastName>(?:[\\s\\S]*?<ForeName>([^<]+)<\\/ForeName>)?/.exec(authorBlock);\n    const firstAuthor = auM\n      ? (auM[1] + (auM[2] ? ' ' + auM[2].charAt(0) : ''))\n      : '';\n\n    // Abstract: prefer structured sections\n    const absBlock = (/<Abstract>([\\s\\S]*?)<\\/Abstract>/.exec(block) || ['', ''])[1];\n    let abstract = '';\n    if (absBlock) {\n      const sections = [...absBlock.matchAll(/<AbstractText(?:[^>]*Label=\"([^\"]*)\")?[^>]*>([\\s\\S]*?)<\\/AbstractText>/g)];\n      if (sections.length) {\n        abstract = sections.map(s =>\n          (s[1] ? s[1] + ': ' : '') + s[2].replace(/<[^>]+>/g, '').trim()\n        ).join('\\n');\n      } else {\n        abstract = absBlock.replace(/<[^>]+>/g, '').trim();\n      }\n    }\n\n    // DOI\n    const doiM = /<ArticleId IdType=\"doi\">([^<]+)<\\/ArticleId>/i.exec(block);\n    const doi = doiM ? 'https://doi.org/' + doiM[1].trim() : '';\n\n    // PubDate\n    const pdBlock = (/<PubDate>([\\s\\S]*?)<\\/PubDate>/.exec(block) || ['', ''])[1];\n    const year  = (/<Year>(\\d+)<\\/Year>/.exec(pdBlock) || ['', ''])[1];\n    const rawMo = (/<Month>([^<]+)<\\/Month>/.exec(pdBlock) || ['', '01'])[1];\n    const day   = (/<Day>(\\d+)<\\/Day>/.exec(pdBlock) || ['', '01'])[1];\n    const moNum = /^\\d+$/.test(rawMo)\n      ? rawMo.padStart(2, '0')\n      : String(MONTH_MAP[rawMo] || 1).padStart(2, '0');\n    const pubDate = year ? year + '-' + moNum + '-' + day.padStart(2, '0') : '';\n\n    articles.push({ pmid, journal, articleType: typeCode, articleTypeLabel: typeLabel,\n                    title, firstAuthor, abstract, doi, pubDate });\n  }\n  return articles;\n}\n\n// ── Main ──\nconst seen = new Set();\nconst allArticles = [];\n\nfor (const journal of JOURNALS) {\n  for (const type of TYPES) {\n    await sleep(DELAY_MS);\n    let ids;\n    try {\n      ids = await eSearch(journal.issn, type.filter, type.retmax);\n    } catch (e) {\n      ids = [];\n    }\n    const newIds = ids.filter(id => !seen.has(id));\n    newIds.forEach(id => seen.add(id));\n    if (newIds.length > 0) {\n      await sleep(DELAY_MS);\n      let xml = '';\n      try { xml = await eFetch(newIds); } catch (_) {}\n      if (xml) {\n        const parsed = parseArticles(xml, journal.name, type.code, type.label);\n        allArticles.push(...parsed);\n      }\n    }\n  }\n}\n\nreturn allArticles.map(a => ({ json: a }));"
+      }
+    },
+    {
+      "id": "54f8074d-6f63-491e-a7fc-df9a91861ff6",
+      "name": "準備審稿 Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        13120,
+        2864
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// ── 準備審稿 Prompt ──\n// Receives Gemini draft ($json.text), builds full review prompt for Claude\n\nconst draft = $json.text || '';\nconst meta  = $('整理分類 & 建立 Prompt').first().json;\n\nconst reviewPrompt =\n'You are a senior clinical pharmacist editor reviewing a newsletter draft.\\n' +\n'RULE: Fix errors only — do not rewrite correct content.\\n\\n' +\n'CHECK IN ORDER:\\n' +\n'1. HEADER: must begin with 【藥師文獻週報】, then NEJM/Lancet/JAMA/BMJ 精選 line,\\n' +\n'   then 產製時間, then ══ block containing 本週收錄 and per-type counts.\\n' +\n'2. JOURNAL ORDER: must appear as NEJM → Lancet → JAMA → BMJ.\\n' +\n'   Each journal uses 【JOURNAL】 header followed by ─── separator line.\\n' +\n'3. TYPE ORDER within each journal: RCT → Meta-analysis → Systematic Review → Original Article.\\n' +\n'4. TITLE: the ▶ line must show the ORIGINAL ENGLISH TITLE verbatim.\\n' +\n'   If any Chinese text appears on the ▶ line, restore the English title from context.\\n' +\n'   Wrong: ▶ 司美格魯肽治療保留射血分數心衰竭\\n' +\n'   Right:  ▶ Semaglutide in Heart Failure with Preserved Ejection Fraction\\n' +\n'5. ARTICLE FIELDS: each article must have:\\n' +\n'   - 類型/作者/DOI line (second line, indented)\\n' +\n'   - 背景, 方法, 結果, 結論 fields (indented, each on own line)\\n' +\n'   - 背景/方法/結果: max 2 sentences each\\n' +\n'   - 結論: exactly 1 sentence\\n' +\n'   - Any missing field → （詳見原文）\\n' +\n'6. DOI: must be a real URL (https://doi.org/...) from the article, not a placeholder.\\n' +\n'7. DRUG NAMES: drug names, trial names, gene names must stay in English within Chinese text.\\n' +\n'8. MARKDOWN: remove any **, *, # characters if present.\\n' +\n'9. COUNTS: verify that RCT/MA/SR/OA counts in the ══ block match articles in the body.\\n' +\n'10. FOOTER: the document must end with 【本週精選完畢】.\\n\\n' +\n'Return ONLY the corrected newsletter text. No explanations, no commentary.\\n\\n' +\n'DRAFT:\\n' + draft;\n\nreturn [{ json: { reviewPrompt, docTitle: meta.docTitle } }];"
+      }
+    },
+    {
+      "id": "0196709d-ddb4-4f3a-8a41-7895c709b9e4",
+      "name": "AI 審稿 (Claude)",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.4,
+      "position": [
+        13440,
+        2864
+      ],
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.reviewPrompt }}"
+      }
+    },
+    {
+      "id": "9ff60b77-4bc4-4aaf-aba9-7faab4e6d2b9",
+      "name": "Claude Sonnet (審稿)",
+      "type": "@n8n/n8n-nodes-langchain.lmChatAnthropic",
+      "typeVersion": 1.3,
+      "position": [
+        13440,
+        3072
+      ],
+      "parameters": {
+        "model": "claude-sonnet-4-5-20251001",
+        "options": {
+          "maxTokensToSample": 16384,
+          "temperature": 0.1
+        }
+      },
+      "credentials": {
+        "anthropicApi": {
+          "id": "",
+          "name": "Anthropic account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "每週一 08:00": {
+      "main": [
+        [
+          {
+            "node": "PubMed Fetch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "PubMed Fetch": {
+      "main": [
+        [
+          {
+            "node": "整理分類 & 建立 Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "整理分類 & 建立 Prompt": {
+      "main": [
+        [
+          {
+            "node": "AI 撰寫新聞稿",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI 撰寫新聞稿": {
+      "main": [
+        [
+          {
+            "node": "準備審稿 Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "準備審稿 Prompt": {
+      "main": [
+        [
+          {
+            "node": "AI 審稿 (Claude)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI 審稿 (Claude)": {
+      "main": [
+        [
+          {
+            "node": "準備文件內容",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "準備文件內容": {
+      "main": [
+        [
+          {
+            "node": "建立 Google Doc",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "建立 Google Doc": {
+      "main": [
+        [
+          {
+            "node": "寫入文件內容",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Gemini Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI 撰寫新聞稿",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claude Sonnet (審稿)": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI 審稿 (Claude)",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false,
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "0187bcf89b2ee97d53f10bee583eefdf6e77929a910fac7b0ca9954cdfa3b93b"
+  },
+  "id": "ZXVpv5sco9EaFV6i",
+  "tags": []
+}
