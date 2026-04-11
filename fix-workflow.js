@@ -83,7 +83,7 @@ function commonParams() {
 }
 
 async function eSearch(issn, typeFilter, retmax) {
-  const term = issn + '[ta] AND ' + dateRange + ' AND ' + typeFilter;
+  const term = issn + '[issn] AND ' + dateRange + ' AND ' + typeFilter;
   const params = Object.assign({}, commonParams(), {
     term, usehistory: 'y', retmax: String(retmax), retmode: 'json',
   });
@@ -108,7 +108,7 @@ const MONTH_MAP = { Jan:1,Feb:2,Mar:3,Apr:4,May:5,Jun:6,
 
 function parseArticles(xml, journal, typeCode, typeLabel) {
   const articles = [];
-  const artRx = /<PubmedArticle>([\s\S]*?)<\\/PubmedArticle>/g;
+  const artRx = /<PubmedArticle>([\\s\\S]*?)<\\/PubmedArticle>/g;
   let m;
   while ((m = artRx.exec(xml)) !== null) {
     const block = m[1];
