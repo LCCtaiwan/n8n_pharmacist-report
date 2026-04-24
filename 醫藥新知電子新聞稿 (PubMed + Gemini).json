@@ -1,0 +1,463 @@
+{
+  "name": "醫藥新知電子新聞稿 (PubMed + Gemini)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "weeks",
+              "triggerAtDay": [
+                1
+              ],
+              "triggerAtHour": 8
+            }
+          ]
+        }
+      },
+      "id": "331ef2d6-6452-46db-9512-2f6a7a816133",
+      "name": "每週一 08:00",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        15248,
+        2368
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "\n// ── 整理分類 & 建立 Prompt ──\nconst JOURNAL_ORDER = ['NEJM', 'Lancet', 'JAMA', 'BMJ'];\nconst TYPE_ORDER    = ['RCT', 'MA', 'SR', 'OA'];\nconst TYPE_DISPLAY  = {\n  RCT: 'RCT',\n  MA:  'Meta-analysis',\n  SR:  'Systematic Review',\n  OA:  'Original Article',\n};\n\nconst items = $input.all().map(i => i.json);\n\nconst stats = { RCT:0, MA:0, SR:0, OA:0 };\nfor (const a of items) { if (a.articleType in stats) stats[a.articleType]++; }\n\nconst grouped = {};\nfor (const j of JOURNAL_ORDER) {\n  grouped[j] = {};\n  for (const t of TYPE_ORDER) grouped[j][t] = [];\n}\nfor (const a of items) {\n  if (grouped[a.journal] && a.articleType in grouped[a.journal])\n    grouped[a.journal][a.articleType].push(a);\n}\nfor (const j of JOURNAL_ORDER)\n  for (const t of TYPE_ORDER)\n    grouped[j][t].sort((a, b) => new Date(b.pubDate || 0) - new Date(a.pubDate || 0));\n\nfunction getISOWeek(d) {\n  const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));\n  const dow  = date.getUTCDay() || 7;\n  date.setUTCDate(date.getUTCDate() + 4 - dow);\n  const y1 = new Date(Date.UTC(date.getUTCFullYear(), 0, 1));\n  return Math.ceil((((date - y1) / 86400000) + 1) / 7);\n}\n\nconst now       = new Date();\nconst weekNum   = String(getISOWeek(now)).padStart(2, '0');\nconst year      = now.getFullYear();\nconst timestamp = now.toLocaleString('zh-TW', {\n  timeZone: 'Asia/Taipei',\n  year: 'numeric', month: '2-digit', day: '2-digit',\n  hour: '2-digit', minute: '2-digit', hour12: false,\n});\nconst docTitle  = '【藥師文獻週報】' + year + ' 第' + weekNum + '週';\nconst total     = items.length;\nconst SEP       = '══════════════════════════════════════';\n\nconst fmtArticle = a =>\n  'PMID: '     + a.pmid + '\\n' +\n  'Journal: '  + a.journal + '\\n' +\n  'Type: '     + (TYPE_DISPLAY[a.articleType] || a.articleType) + '\\n' +\n  'Title: '    + a.title + '\\n' +\n  'Author: '   + (a.firstAuthor || 'N/A') + '\\n' +\n  'DOI: '      + (a.doi || 'N/A') + '\\n' +\n  'PubDate: '  + (a.pubDate || 'N/A') + '\\n' +\n  'Abstract:\\n' + (a.abstract || '(no abstract available)');\n\nlet articleData = '';\nfor (const j of JOURNAL_ORDER) {\n  const journalArticles = TYPE_ORDER.flatMap(t => grouped[j][t]);\n  if (!journalArticles.length) continue;\n  articleData += '\\n=== ' + j + ' ===\\n';\n  for (const t of TYPE_ORDER) {\n    if (!grouped[j][t].length) continue;\n    articleData += '\\n-- ' + TYPE_DISPLAY[t] + ' --\\n\\n';\n    for (const a of grouped[j][t]) {\n      articleData += fmtArticle(a) + '\\n\\n---\\n\\n';\n    }\n  }\n}\n\nconst prompt =\n'You are a senior clinical pharmacist editor writing for hospital pharmacists in Taiwan. Produce the weekly pharmacist digest.\\n' +\n\n'\\nCRITICAL RULE: You MUST ONLY summarize the articles explicitly listed in the ARTICLES section below. Do NOT invent, fabricate, generate, or add ANY article that is not in the ARTICLES section. If ARTICLES is empty or contains zero articles, output ONLY the header and the line 【本週無新收錄文章】 then stop.\\n' +\n\n'\\n════════════════════ LANGUAGE & STYLE RULES ════════════════════\\n' +\n'- All explanatory text: Traditional Chinese (繁體中文)\\n' +\n'- Keep in English (NEVER translate or transliterate):\\n' +\n'    drug names, brand names, trial names, gene names, biomarkers, lab units, journal names\\n' +\n'- Established Chinese disease terms are acceptable (心房顫動, 糖尿病, 心衰竭, etc.)\\n' +\n'- NO MARKDOWN anywhere — no **, no *, no # characters\\n' +\n'- Missing field: write （詳見原文）\\n' +\n\n'\\n════════════════════ OUTPUT FORMAT ════════════════════\\n' +\n'\\n' + docTitle + '\\n' +\n'NEJM / Lancet / JAMA / BMJ 精選\\n' +\n'產製時間：' + timestamp + '\\n' +\n'\\n' + SEP + '\\n' +\n'本週收錄：' + total + ' 篇\\n' +\n'RCT：' + stats.RCT + ' 篇｜Meta-analysis：' + stats.MA + ' 篇｜系統性回顧：' + stats.SR + ' 篇｜原著論文：' + stats.OA + ' 篇\\n' +\nSEP + '\\n' +\n\n'\\n[For each journal that has articles, in order: NEJM → Lancet → JAMA → BMJ]\\n' +\n'\\n【JOURNAL_NAME】\\n' +\n'──────────────────────────────────────\\n' +\n'\\n[Within each journal: RCT → Meta-analysis → Systematic Review → Original Article; newest first]\\n' +\n\n'\\n\\n━━ For RCT articles, use this format:\\n' +\n'▶ [ORIGINAL ENGLISH TITLE — copy verbatim, NEVER translate]\\n' +\n'  類型：RCT｜作者：[LastName] et al.\\n' +\n'  DOI：[doi]\\n' +\n'\\n' +\n'  背景：[≤2 sentences] 先說明目前治療的缺口或臨床問題，再說明本藥物/介入的作用機制或研究動機。\\n' +\n'  方法：[≤2 sentences] 研究設計、收案條件（含年齡、疾病嚴重度、基線特徵）、介入 vs 對照、追蹤期間。\\n' +\n'  結果：[≤2 sentences] 主要終點結果 + 統計數值（HR/RR/OR, 95%CI, P值）；如有重要安全性訊號一併列出。\\n' +\n'  結論：[exactly 1 sentence] 明確說明藥師在臨床上應注意或可採取的行動（監測指標、用藥調整時機、病人衛教重點等）。\\n' +\n\n'\\n━━ For Meta-analysis / Systematic Review articles, use this format:\\n' +\n'▶ [ORIGINAL ENGLISH TITLE — copy verbatim]\\n' +\n'  類型：[Meta-analysis / Systematic Review]｜作者：[LastName] et al.\\n' +\n'  DOI：[doi]\\n' +\n'\\n' +\n'  背景：[≤2 sentences] 說明此主題的臨床爭議或知識缺口。\\n' +\n'  方法：[≤2 sentences] 納入研究數、總參與者人數、比較的介入與對照、主要評估指標。\\n' +\n'  結果：[≤2 sentences] 主要效果量（RR/OR/HR, 95%CI）；必要時說明異質性或證據品質（GRADE）。\\n' +\n'  結論：[exactly 1 sentence] 明確說明藥師在臨床上應注意或可採取的行動。\\n' +\n\n'\\n━━ For Original Article articles, use this format:\\n' +\n'▶ [ORIGINAL ENGLISH TITLE — copy verbatim]\\n' +\n'  類型：Original Article｜作者：[LastName] et al.\\n' +\n'  DOI：[doi]\\n' +\n'\\n' +\n'  背景：[≤2 sentences] 說明研究問題的臨床重要性。\\n' +\n'  方法：[≤2 sentences] 研究設計、收案條件（含病人特徵）、主要評估指標。\\n' +\n'  結果：[≤2 sentences] 主要發現 + 數據。\\n' +\n'  結論：[exactly 1 sentence] 明確說明藥師在臨床上應注意或可採取的行動。\\n' +\n\n'\\n[blank line between articles]\\n' +\n'End the entire document with: 【本週精選完畢】\\n' +\n\n'\\n════════════════════ ARTICLES ════════════════════\\n' +\narticleData;\n\nreturn [{ json: { prompt, docTitle, total, stats } }];\n"
+      },
+      "id": "42af4db1-d4de-4608-acf6-98eb6c4eb552",
+      "name": "整理分類 & 建立 Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        17088,
+        2368
+      ]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.prompt }}"
+      },
+      "id": "fbaee28e-681c-4b0d-82de-c6244a76bfbb",
+      "name": "AI 撰寫新聞稿",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.4,
+      "position": [
+        17408,
+        2368
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ── 準備文件內容 ──\n// Receives Gemini output ($json.text) and fetches docTitle from upstream.\nconst digestText = $json.text || '';\nconst meta = $('整理分類 & 建立 Prompt').first().json;\nreturn [{ json: { digestText, docTitle: meta.docTitle } }];"
+      },
+      "id": "7520d380-c16d-4ace-a686-68aa723a7240",
+      "name": "準備文件內容",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        17728,
+        2368
+      ]
+    },
+    {
+      "parameters": {
+        "folderId": "1cfA8AgRT0kah5wb9qiLRt2oi97ADF5J6",
+        "title": "={{ $json.docTitle }}"
+      },
+      "id": "0d121c03-f612-49d0-8dd9-d90b7dbe808d",
+      "name": "建立 Google Doc",
+      "type": "n8n-nodes-base.googleDocs",
+      "typeVersion": 2,
+      "position": [
+        18048,
+        2368
+      ],
+      "credentials": {
+        "googleDocsOAuth2Api": {
+          "id": "fm7r2RNuGb5IRd0Q",
+          "name": "Google Docs account 3"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://docs.googleapis.com/v1/documents/{{ $json.documentId || $json.id }}:batchUpdate",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleDocsOAuth2Api",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ \"requests\": [{ \"insertText\": { \"location\": { \"index\": 1 }, \"text\": $('準備文件內容').first().json.digestText } }] }) }}",
+        "options": {}
+      },
+      "id": "78518aff-ca6f-4c08-ab50-3df6b0b3c099",
+      "name": "寫入文件內容",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        18368,
+        2368
+      ],
+      "credentials": {
+        "googleDocsOAuth2Api": {
+          "id": "fm7r2RNuGb5IRd0Q",
+          "name": "Google Docs account 3"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "id": "9aade6cc-4adf-4f21-be78-b17aff6f75df",
+      "name": "錯誤捕捉",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [
+        17408,
+        2768
+      ]
+    },
+    {
+      "parameters": {
+        "options": {
+          "maxOutputTokens": 65536,
+          "temperature": 0.3
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        17408,
+        2576
+      ],
+      "id": "921a15b4-dd9b-4b48-bd53-4bd3aaeb5a68",
+      "name": "Google Gemini Chat Model",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "y820M4W5mpWnQ21f",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst EMAIL   = \"epyonlee2001@gmail.com\";\nconst API_KEY = \"7fc2f56107513e534332a82d43ade08cbb08\";\nconst ENC = s => encodeURIComponent(String(s));\n\nconst JOURNALS = [\n  { name:\"NEJM\",   issn:\"0028-4793\" },\n  { name:\"Lancet\", issn:\"0140-6736\" },\n  { name:\"JAMA\",   issn:\"0098-7484\" },\n  { name:\"BMJ\",    issn:\"0959-8138\" },\n];\nconst TYPES = [\n  { code:\"RCT\", retmax:10, filter:\"randomized controlled trial[pt]\" },\n  { code:\"MA\",  retmax:10, filter:\"meta-analysis[pt]\" },\n  { code:\"SR\",  retmax:10, filter:\"systematic review[pt]\" },\n  { code:\"OA\",  retmax:20,\n    filter:\"journal article[pt] NOT (randomized controlled trial[pt] OR systematic review[pt] OR meta-analysis[pt] OR review[pt] OR letter[pt] OR editorial[pt] OR comment[pt])\" },\n];\n\nconst now    = new Date();\nconst cutoff = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000);\nconst fmt    = d => d.getFullYear() + \"/\" + String(d.getMonth()+1).padStart(2,\"0\") + \"/\" + String(d.getDate()).padStart(2,\"0\");\nconst dateRange = fmt(cutoff) + \":\" + fmt(now) + \"[edat]\";\n\nconst BASE_URL = \"https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi\";\nconst common   = \"db=pubmed&tool=PharmJournalNewsletter&email=\" + ENC(EMAIL) + \"&api_key=\" + ENC(API_KEY) + \"&retmode=json\";\n\nconst items = [];\nfor (const j of JOURNALS) {\n  for (const t of TYPES) {\n    const term = j.issn + \"[issn] AND \" + dateRange + \" AND \" + t.filter;\n    items.push({ json: {\n      journal:     j.name,\n      articleType: t.code,\n      retmax:      t.retmax,\n      url: BASE_URL + \"?\" + common + \"&retmax=\" + t.retmax + \"&term=\" + ENC(term),\n    }});\n  }\n}\nreturn items;\n"
+      },
+      "id": "4965991d-6515-45e5-a229-558171b781c2",
+      "name": "Build Search Queries",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        15408,
+        2368
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.url }}",
+        "options": {
+          "batching": {
+            "batch": {
+              "batchSize": 1,
+              "batchInterval": 200
+            }
+          }
+        }
+      },
+      "id": "c05feb5a-055e-488a-bdfc-cccf3ded2396",
+      "name": "PubMed eSearch",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        15696,
+        2368
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000,
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst EMAIL   = \"epyonlee2001@gmail.com\";\nconst API_KEY = \"7fc2f56107513e534332a82d43ade08cbb08\";\nconst ENC     = s => encodeURIComponent(String(s));\nconst EFETCH  = \"https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi\";\nconst common  = \"db=pubmed&tool=PharmJournalNewsletter&email=\" + ENC(EMAIL) + \"&api_key=\" + ENC(API_KEY) + \"&rettype=abstract&retmode=xml\";\n\nconst seen = new Set();\nconst batches = [];\n\nfor (const item of $input.all()) {\n  const d = item.json;\n  const ids    = d.esearchresult?.idlist || [];\n  const newIds = ids.filter(id => !seen.has(id));\n  newIds.forEach(id => seen.add(id));\n  if (!newIds.length) continue;\n  // Encode journal & articleType into URL so HTTP Request node preserves them\n  batches.push({ json: {\n    journal:     d.journal,\n    articleType: d.articleType,\n    pmids:       newIds,\n    url: EFETCH + \"?\" + common + \"&id=\" + newIds.map(ENC).join(\",\")\n       + \"&x_journal=\" + ENC(d.journal)\n       + \"&x_type=\"    + ENC(d.articleType),\n  }});\n}\n\nif (!batches.length) {\n  return [{ json: { journal:\"\", articleType:\"\", pmids:[], url:\"\", noData:true } }];\n}\nreturn batches;\n"
+      },
+      "id": "714cf745-f600-41b1-bcd6-8ddabad2bc81",
+      "name": "Collect PMIDs & Build eFetch URLs",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        15888,
+        2368
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.url }}",
+        "options": {
+          "batching": {
+            "batch": {
+              "batchSize": 1,
+              "batchInterval": 200
+            }
+          },
+          "response": {
+            "response": {
+              "responseFormat": "text"
+            }
+          }
+        }
+      },
+      "id": "7ab71f14-c7da-4902-a59b-282b87f6e895",
+      "name": "PubMed eFetch XML",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        16128,
+        2368
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst MONTH_MAP = { Jan:1,Feb:2,Mar:3,Apr:4,May:5,Jun:6,Jul:7,Aug:8,Sep:9,Oct:10,Nov:11,Dec:12 };\n\nconst ISSN_MAP = {\n  \"0028-4793\": \"NEJM\", \"1533-4406\": \"NEJM\",\n  \"0140-6736\": \"Lancet\", \"1474-547X\": \"Lancet\",\n  \"0098-7484\": \"JAMA\", \"1538-3598\": \"JAMA\",\n  \"0959-8138\": \"BMJ\", \"1756-1833\": \"BMJ\",\n};\n\n// Article types that are kept even without an abstract\nconst KEEP_WITHOUT_ABSTRACT = new Set([\"RCT\", \"MA\", \"SR\"]);\n\nfunction getJournalFromBlock(b) {\n  const issnM = /<ISSN[^>]*>([^<]+)<\\/ISSN>/i.exec(b);\n  if (issnM) { const mapped = ISSN_MAP[issnM[1].trim()]; if (mapped) return mapped; }\n  const isoM = /<ISOAbbreviation>([^<]+)<\\/ISOAbbreviation>/i.exec(b);\n  if (isoM) {\n    const iso = isoM[1].trim();\n    if (/N Engl J Med/i.test(iso)) return \"NEJM\";\n    if (/Lancet/i.test(iso)) return \"Lancet\";\n    if (/JAMA/i.test(iso)) return \"JAMA\";\n    if (/BMJ/i.test(iso)) return \"BMJ\";\n  }\n  return \"Other\";\n}\n\nfunction getArticleTypeFromBlock(b) {\n  const ptBlock = (/<PublicationTypeList>([\\s\\S]*?)<\\/PublicationTypeList>/.exec(b)||[\"\",\"\"])[1];\n  const types = [...ptBlock.matchAll(/<PublicationType[^>]*>([^<]+)<\\/PublicationType>/g)].map(m => m[1]);\n  if (types.some(t => /randomized controlled trial/i.test(t))) return \"RCT\";\n  if (types.some(t => /meta-analysis/i.test(t))) return \"MA\";\n  if (types.some(t => /systematic review/i.test(t))) return \"SR\";\n  return \"OA\";\n}\n\nfunction parseBlock(b) {\n  const tag = t => { const x = new RegExp(\"<\" + t + \"[^>]*>([\\\\s\\\\S]*?)<\\\\/\" + t + \">\",\"i\").exec(b); return x?x[1].replace(/<[^>]+>/g,\"\").trim():\"\"; };\n  const pmid = tag(\"PMID\"); if (!pmid) return null;\n  const title = tag(\"ArticleTitle\").replace(/\\.$/, \"\").replace(/&amp;/g,\"&\").replace(/&lt;/g,\"<\").replace(/&gt;/g,\">\");\n  if (!title) return null;\n  const auBlock = (/<AuthorList[^>]*>([\\s\\S]*?)<\\/AuthorList>/.exec(b)||[\"\",\"\"])[1];\n  const auM = /<LastName>([^<]+)<\\/LastName>/.exec(auBlock);\n  const absBlock = (/<Abstract>([\\s\\S]*?)<\\/Abstract>/.exec(b)||[\"\",\"\"])[1];\n  let abstract = \"\";\n  if (absBlock) {\n    const secs = [...absBlock.matchAll(/<AbstractText(?:[^>]*Label=\"([^\"]*)\")?[^>]*>([\\s\\S]*?)<\\/AbstractText>/g)];\n    abstract = secs.length ? secs.map(s=>(s[1]?s[1]+\": \":\"\")+s[2].replace(/<[^>]+>/g,\"\").trim()).join(\"\\n\")\n                           : absBlock.replace(/<[^>]+>/g,\"\").trim();\n  }\n  const doiM = /<ArticleId IdType=\"doi\">([^<]+)<\\/ArticleId>/i.exec(b);\n  const doi  = doiM ? \"https://doi.org/\" + doiM[1].trim() : \"\";\n  const pdB  = (/<PubDate>([\\s\\S]*?)<\\/PubDate>/.exec(b)||[\"\",\"\"])[1];\n  const yr   = (/<Year>(\\d+)<\\/Year>/.exec(pdB)||[\"\",\"\"])[1];\n  const rawM = (/<Month>([^<]+)<\\/Month>/.exec(pdB)||[\"\",\"01\"])[1];\n  const dy   = (/<Day>(\\d+)<\\/Day>/.exec(pdB)||[\"\",\"01\"])[1];\n  const mo   = /^\\d+$/.test(rawM) ? rawM.padStart(2,\"0\") : String(MONTH_MAP[rawM]||1).padStart(2,\"0\");\n  const journal     = getJournalFromBlock(b);\n  const articleType = getArticleTypeFromBlock(b);\n\n  // Filter: OA without abstract → skip\n  if (articleType === \"OA\" && abstract.length < 50) return null;\n\n  return { pmid, title, firstAuthor:auM?auM[1]:\"\", abstract, doi,\n           pubDate:yr?`${yr}-${mo}-${dy.padStart(2,\"0\")}`:\"\"  , journal, articleType };\n}\n\nconst all = [];\nfor (const item of $input.all()) {\n  const d = item.json;\n  if (d.noData) continue;\n  const xml = d.data || d.body || d.response || \"\";\n  if (!xml || !xml.includes(\"<PubmedArticle>\")) continue;\n  const rx = /<PubmedArticle>[\\s\\S]*?<\\/PubmedArticle>/g;\n  let m;\n  while ((m = rx.exec(xml)) !== null) {\n    const art = parseBlock(m[0]);\n    if (art) all.push({ json: art });\n  }\n}\nreturn all.length ? all : [{ json: { pmid:\"\", journal:\"\", articleType:\"\", title:\"\", firstAuthor:\"\", abstract:\"\", doi:\"\", pubDate:\"\", noData:true } }];\n"
+      },
+      "id": "f131600b-7dde-4273-8638-b0212943401a",
+      "name": "Parse XML & Format Articles",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        16368,
+        2368
+      ]
+    },
+    {
+      "parameters": {
+        "amount": 0.5
+      },
+      "id": "eed5feb9-25f1-442f-8efe-e2a9eb6cf0b2",
+      "name": "Rate Limit Delay",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        15552,
+        2368
+      ],
+      "webhookId": "rate-limit-wait-001"
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst raw = $json.text || '';\n\nconst TYPE_CFG = {\n  'RCT':               { badge: '#1D4ED8', bg: '#EFF6FF' },\n  'Meta-analysis':     { badge: '#6D28D9', bg: '#F5F3FF' },\n  'Systematic Review': { badge: '#047857', bg: '#ECFDF5' },\n  'Original Article':  { badge: '#B45309', bg: '#FFFBEB' },\n};\nconst JOURNAL_CFG = {\n  'NEJM':   { color: '#991B1B', accent: '#FEF2F2' },\n  'Lancet': { color: '#1E40AF', accent: '#EFF6FF' },\n  'JAMA':   { color: '#065F46', accent: '#F0FDF4' },\n  'BMJ':    { color: '#1E3A5F', accent: '#EFF6FF' },\n};\nconst TYPE_ORDER = ['RCT', 'Meta-analysis', 'Systematic Review', 'Original Article'];\n\nconst esc = s => String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');\n\n// ── Header parsing ──\nfunction parseHeader(text) {\n  const h = { title:'', subtitle:'', timestamp:'', stats:'', isCompact:false };\n  for (const l of text.split('\\n').slice(0,30)) {\n    const t = l.trim();\n    if (t.includes('藥師文獻週報'))                    h.title     = t;\n    else if (t.includes('NEJM')&&t.includes('精選'))   h.subtitle  = t;\n    else if (t.includes('產製時間'))                    h.timestamp = t.replace('產製時間：','').trim();\n    else if (t.includes('本週收錄'))                    h.stats     = t;\n    else if (t.includes('文章數較多')||t.includes('COMPACT')) h.isCompact = true;\n  }\n  return h;\n}\n\n// ── Stats parsing ──\nfunction parseStats(s) {\n  const g = re => { const m=s.match(re); return m?m[1]:'0'; };\n  return { total:g(/本週收錄：(\\d+)/), rct:g(/RCT：(\\d+)/), ma:g(/Meta-analysis：(\\d+)/), sr:g(/系統性回顧：(\\d+)/), oa:g(/原著論文：(\\d+)/) };\n}\n\n// ── Journal + article parsing ──\n// Handles Gemini output which uses ▶ for articles and 類型：X｜作者：Y inline\n// Does NOT require -- Type -- section headers\nfunction parseJournals(text) {\n  const JOURNAL_NAMES = ['NEJM','Lancet','JAMA','BMJ'];\n  const journals = [];\n  let curJournal = null;\n  let curArt = null;\n  let lastField = null;\n\n  const pushArt = () => {\n    if (curArt && curJournal) {\n      const t = curArt.type || 'Original Article';\n      let typeGroup = curJournal.types.find(x => x.name === t);\n      if (!typeGroup) { typeGroup = { name: t, articles: [] }; curJournal.types.push(typeGroup); }\n      typeGroup.articles.push(curArt);\n      curArt = null; lastField = null;\n    }\n  };\n\n  for (const rawLine of text.split('\\n')) {\n    const t = rawLine.trim();\n\n    // Journal header: 【NEJM】\n    const jm = t.match(/^【(NEJM|Lancet|JAMA|BMJ)】$/);\n    if (jm) {\n      pushArt();\n      curJournal = { name: jm[1], types: [] };\n      journals.push(curJournal);\n      continue;\n    }\n\n    // Article separator / dividers — just flush current article\n    if (t === '---' || t === '━━' || /^─+$/.test(t) || /^═+$/.test(t)) {\n      pushArt(); continue;\n    }\n\n    // Article start: ▶\n    if ((t.startsWith('▶') || t.startsWith('\\u25B6')) && curJournal) {\n      pushArt();\n      curArt = { title: t.replace(/^[▶\\u25B6]\\s*/,'').trim(), type:'', author:'', doi:'', bg:'', method:'', result:'', conclusion:'' };\n      lastField = null;\n      continue;\n    }\n\n    if (curArt) {\n      // 類型：RCT｜作者：Smith et al.\n      const tam = t.match(/類型：(.+?)｜作者：(.+)/);\n      if (tam) { curArt.type = tam[1].trim(); curArt.author = tam[2].trim(); lastField = null; continue; }\n\n      if (t.startsWith('DOI：'))  { curArt.doi        = t.replace('DOI：','').trim();  lastField='doi';        continue; }\n      if (t.startsWith('背景：'))  { curArt.bg         = t.replace('背景：','').trim();  lastField='bg';         continue; }\n      if (t.startsWith('方法：'))  { curArt.method     = t.replace('方法：','').trim();  lastField='method';     continue; }\n      if (t.startsWith('結果：'))  { curArt.result     = t.replace('結果：','').trim();  lastField='result';     continue; }\n      if (t.startsWith('結論：'))  { curArt.conclusion = t.replace('結論：','').trim();  lastField='conclusion'; continue; }\n\n      // Continuation line\n      if (lastField && lastField !== 'doi' && rawLine.startsWith('  ') && t &&\n          !t.startsWith('▶') && !t.startsWith('━') && !t.startsWith('─') && !t.startsWith('【')) {\n        curArt[lastField] += ' ' + t;\n      }\n    }\n  }\n  pushArt();\n\n  // Sort types within each journal by TYPE_ORDER\n  for (const j of journals) {\n    j.types.sort((a,b) => {\n      const ai = TYPE_ORDER.indexOf(a.name); const bi = TYPE_ORDER.indexOf(b.name);\n      return (ai<0?99:ai) - (bi<0?99:bi);\n    });\n  }\n  return journals;\n}\n\n// ── Card HTML ──\nfunction cardHTML(art) {\n  const cfg = TYPE_CFG[art.type] || TYPE_CFG['Original Article'];\n  const doiClean = (art.doi||'').replace(/^https?:\\/\\/doi\\.org\\//i,'').replace(/^doi:\\s*/i,'');\n  const doiHref = doiClean && doiClean !== '（詳見原文）' && doiClean !== 'N/A'\n    ? `https://doi.org/${doiClean}` : null;\n  const fields = [\n    art.bg         && `<p><span class=\"lbl\">背景</span>${esc(art.bg)}</p>`,\n    art.method     && `<p><span class=\"lbl\">方法</span>${esc(art.method)}</p>`,\n    art.result     && `<p><span class=\"lbl\">結果</span>${esc(art.result)}</p>`,\n    art.conclusion && `<p class=\"concl\"><span class=\"lbl\">結論</span>${esc(art.conclusion)}</p>`,\n  ].filter(Boolean).join('');\n  const body = fields\n    ? `<div class=\"card-body\">${fields}</div>`\n    : `<p class=\"compact-note\">（原著論文精簡模式，請參閱原文）</p>`;\n  return `\n<div class=\"card\" style=\"border-left:4px solid ${cfg.badge};background:${cfg.bg};\">\n  <span class=\"badge\" style=\"background:${cfg.badge};\">${esc(art.type||'Article')}</span>\n  <h3 class=\"card-title\">${esc(art.title)}</h3>\n  <div class=\"card-meta\">\n    <span>✍ ${esc(art.author||'—')}</span>\n    ${doiHref?`<a href=\"${esc(doiHref)}\" target=\"_blank\" class=\"doi-link\">DOI →</a>`:(doiClean&&doiClean!=='N/A'?`<span>${esc(doiClean)}</span>`:'')}\n  </div>${body}\n</div>`;\n}\n\n// ── Journal section HTML ──\nfunction journalHTML(j) {\n  const cfg = JOURNAL_CFG[j.name]||{color:'#374151',accent:'#F9FAFB'};\n  const sections = j.types.filter(t=>t.articles.length).map(t=>`\n<div class=\"type-sec\">\n  <div class=\"type-hdr\">${esc(t.name)}</div>\n  ${t.articles.map(cardHTML).join('\\n')}\n</div>`).join('');\n  if(!sections.trim()) return '';\n  return `\n<section class=\"journal\">\n  <div class=\"journal-hdr\" style=\"border-left:6px solid ${cfg.color};background:${cfg.accent};\">\n    <h2 style=\"color:${cfg.color};\">${esc(j.name)}</h2>\n  </div>${sections}\n</section>`;\n}\n\n// ── Main ──\nconst hdr    = parseHeader(raw);\nconst stats  = parseStats(hdr.stats);\nconst jData  = parseJournals(raw);\nconst meta   = $('整理分類 & 建立 Prompt').first().json;\nconst docTitle  = meta.docTitle || hdr.title || '藥師文獻週報';\nconst isCompact = meta.compactMode || hdr.isCompact;\nconst st = meta.stats || {};\n\nconst compactBadge = isCompact ? `<div class=\"compact-badge\">精簡模式：OA 文章數較多，僅列標題</div>` : '';\n\nconst css = `*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}\nbody{font-family:-apple-system,BlinkMacSystemFont,\"Segoe UI\",\"Noto Sans TC\",\"PingFang TC\",\"Microsoft JhengHei\",sans-serif;background:#F1F5F9;color:#1E293B;font-size:15px;line-height:1.75}\n.wrap{max-width:780px;margin:0 auto;padding:16px}\n.hero{background:linear-gradient(135deg,#0F172A 0%,#1E3A5F 60%,#0E7490 100%);color:#fff;padding:32px 24px 28px;border-radius:16px;text-align:center;margin-bottom:20px}\n.hero-icon{font-size:40px;margin-bottom:10px}\n.hero h1{font-size:1.45rem;font-weight:700;letter-spacing:.5px;margin-bottom:6px}\n.hero .sub{opacity:.75;font-size:.9rem;margin-bottom:14px}\n.hero .ts{opacity:.55;font-size:.78rem}\n.stats{background:#fff;border-radius:12px;padding:16px 12px;margin-bottom:20px;display:flex;flex-wrap:wrap;gap:8px;justify-content:center;box-shadow:0 1px 4px rgba(0,0,0,.07)}\n.stat{text-align:center;min-width:72px}\n.snum{font-size:1.6rem;font-weight:700;line-height:1}\n.slbl{font-size:.7rem;color:#64748B;margin-top:2px}\n.st .snum{color:#0F172A}.sr .snum{color:#1D4ED8}.sm .snum{color:#6D28D9}.ss .snum{color:#047857}.so .snum{color:#B45309}\n.sdiv{width:1px;background:#E2E8F0;align-self:stretch;margin:4px 0}\n.compact-badge{width:100%;text-align:center;font-size:.75rem;color:#B45309;background:#FFFBEB;border:1px solid #FDE68A;border-radius:6px;padding:4px 8px;margin-top:4px}\n.journal{margin-bottom:28px;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,.07)}\n.journal-hdr{padding:14px 20px}\n.journal-hdr h2{font-size:1.1rem;font-weight:700}\n.type-sec{padding:0 16px 8px}\n.type-hdr{font-size:.72rem;font-weight:600;color:#94A3B8;text-transform:uppercase;letter-spacing:.8px;padding:12px 0 6px;border-bottom:1px solid #F1F5F9;margin-bottom:10px}\n.card{border-radius:8px;padding:14px 16px;margin-bottom:10px}\n.badge{display:inline-block;color:#fff;font-size:.68rem;font-weight:600;padding:2px 9px;border-radius:20px;margin-bottom:8px}\n.card-title{font-size:.92rem;font-weight:600;color:#0F172A;line-height:1.5;margin-bottom:6px}\n.card-meta{display:flex;flex-wrap:wrap;gap:10px;font-size:.78rem;color:#64748B}\n.doi-link{color:#2563EB;text-decoration:none;font-weight:500}\n.doi-link:hover{text-decoration:underline}\n.card-body{border-top:1px solid rgba(0,0,0,.06);margin-top:10px;padding-top:10px}\n.card-body p{font-size:.85rem;color:#334155;margin-bottom:7px;line-height:1.65}\n.card-body p:last-child{margin-bottom:0}\n.lbl{font-weight:600;color:#475569;margin-right:5px;font-size:.8rem}\n.lbl::after{content:\"｜\";color:#CBD5E1;margin-right:2px}\n.concl{background:#F0FDF4;border-left:3px solid #10B981;border-radius:0 6px 6px 0;padding:7px 10px;margin-top:2px}\n.concl .lbl{color:#065F46}\n.compact-note{font-size:.8rem;color:#94A3B8;font-style:italic;margin-top:8px;padding-top:8px;border-top:1px solid rgba(0,0,0,.05)}\n.footer{text-align:center;padding:24px 16px;color:#94A3B8;font-size:.78rem;border-top:1px solid #E2E8F0;margin-top:8px}\n.footer strong{color:#475569}\n@media(max-width:480px){.hero h1{font-size:1.15rem}.card-title{font-size:.88rem}.snum{font-size:1.3rem}}`;\n\nconst html = `<!DOCTYPE html>\n<html lang=\"zh-TW\">\n<head>\n<meta charset=\"UTF-8\">\n<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">\n<title>${esc(docTitle)}</title>\n<style>${css}</style>\n</head>\n<body>\n<div class=\"wrap\">\n<div class=\"hero\">\n  <div class=\"hero-icon\">💊</div>\n  <h1>${esc(docTitle)}</h1>\n  <div class=\"sub\">NEJM · Lancet · JAMA · BMJ 精選</div>\n  <div class=\"ts\">產製時間：${esc(hdr.timestamp)}</div>\n</div>\n<div class=\"stats\">\n  <div class=\"stat st\"><div class=\"snum\">${esc(String(meta.total||stats.total))}</div><div class=\"slbl\">本週收錄</div></div>\n  <div class=\"sdiv\"></div>\n  <div class=\"stat sr\"><div class=\"snum\">${esc(String(st.RCT||stats.rct))}</div><div class=\"slbl\">RCT</div></div>\n  <div class=\"stat sm\"><div class=\"snum\">${esc(String(st.MA||stats.ma))}</div><div class=\"slbl\">Meta-analysis</div></div>\n  <div class=\"stat ss\"><div class=\"snum\">${esc(String(st.SR||stats.sr))}</div><div class=\"slbl\">系統性回顧</div></div>\n  <div class=\"stat so\"><div class=\"snum\">${esc(String(st.OA||stats.oa))}</div><div class=\"slbl\">原著論文</div></div>\n  ${compactBadge}\n</div>\n${jData.map(journalHTML).join('\\n')}\n<div class=\"footer\">\n  <strong>【本週精選完畢】</strong><br><br>\n  本報告由 AI 自動摘要，內容僅供參考。臨床決策請以原始文獻及藥品仿單為準。\n</div>\n</div>\n</body>\n</html>`;\n\nconst fileName = docTitle.replace(/[【】\\s]/g,'_').replace(/_+/g,'_').replace(/^_|_$/g,'') + '.html';\nconst buf = Buffer.from(html, 'utf-8');\nconst binaryData = await this.helpers.prepareBinaryData(buf, fileName, 'text/html');\nreturn [{ json: { fileName, docTitle, articleCount: jData.reduce((s,j)=>s+j.types.reduce((s2,t)=>s2+t.articles.length,0),0) }, binary: { data: binaryData } }];\n"
+      },
+      "id": "221fe643-33e5-4e6a-b953-45c643868f93",
+      "name": "Text to HTML",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        17728,
+        2768
+      ]
+    },
+    {
+      "parameters": {
+        "name": "={{ $json.fileName }}",
+        "driveId": {
+          "__rl": true,
+          "mode": "url",
+          "value": "https://drive.google.com/drive/u/0/folders/1cfA8AgRT0kah5wb9qiLRt2oi97ADF5J6"
+        },
+        "folderId": {
+          "__rl": true,
+          "mode": "url",
+          "value": "https://drive.google.com/drive/u/0/folders/1cfA8AgRT0kah5wb9qiLRt2oi97ADF5J6"
+        },
+        "options": {}
+      },
+      "id": "bbf5a733-8839-445f-9fac-cdbe6abfd439",
+      "name": "Upload HTML to Drive",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        18048,
+        2768
+      ],
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "h78LhwFA0VDh7YnF",
+          "name": "Google Drive account 2"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "每週一 08:00": {
+      "main": [
+        [
+          {
+            "node": "Build Search Queries",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "整理分類 & 建立 Prompt": {
+      "main": [
+        [
+          {
+            "node": "AI 撰寫新聞稿",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI 撰寫新聞稿": {
+      "main": [
+        [
+          {
+            "node": "準備文件內容",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Text to HTML",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "準備文件內容": {
+      "main": [
+        [
+          {
+            "node": "建立 Google Doc",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "建立 Google Doc": {
+      "main": [
+        [
+          {
+            "node": "寫入文件內容",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Gemini Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI 撰寫新聞稿",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Search Queries": {
+      "main": [
+        [
+          {
+            "node": "Rate Limit Delay",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "PubMed eSearch": {
+      "main": [
+        [
+          {
+            "node": "Collect PMIDs & Build eFetch URLs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Collect PMIDs & Build eFetch URLs": {
+      "main": [
+        [
+          {
+            "node": "PubMed eFetch XML",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "PubMed eFetch XML": {
+      "main": [
+        [
+          {
+            "node": "Parse XML & Format Articles",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse XML & Format Articles": {
+      "main": [
+        [
+          {
+            "node": "整理分類 & 建立 Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Rate Limit Delay": {
+      "main": [
+        [
+          {
+            "node": "PubMed eSearch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Text to HTML": {
+      "main": [
+        [
+          {
+            "node": "Upload HTML to Drive",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false,
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "versionId": "f43f6309-911d-4c53-aa34-bb54c77ae08d",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "0187bcf89b2ee97d53f10bee583eefdf6e77929a910fac7b0ca9954cdfa3b93b"
+  },
+  "id": "ZXVpv5sco9EaFV6i",
+  "tags": []
+}
