@@ -334,7 +334,7 @@
       ],
       "credentials": {
         "httpHeaderAuth": {
-          "id": "REPLACE_WITH_GITHUB_CREDENTIAL_ID",
+          "id": "github-pat-header-01",
           "name": "GitHub PAT"
         }
       }
@@ -363,7 +363,7 @@
       ],
       "credentials": {
         "httpHeaderAuth": {
-          "id": "REPLACE_WITH_GITHUB_CREDENTIAL_ID",
+          "id": "github-pat-header-01",
           "name": "GitHub PAT"
         }
       }
@@ -409,7 +409,7 @@
       ],
       "credentials": {
         "httpHeaderAuth": {
-          "id": "REPLACE_WITH_GITHUB_CREDENTIAL_ID",
+          "id": "github-pat-header-01",
           "name": "GitHub PAT"
         }
       }
